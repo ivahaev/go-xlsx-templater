@@ -13,7 +13,7 @@ var (
 	rgx = regexp.MustCompile(`\{\{\s*(\w+)\.\w+\s*\}\}`)
 )
 
-// Xlst{} Represents template struct
+// Xlst Represents template struct
 type Xlst struct {
 	file   *xlsx.File
 	report *xlsx.File
