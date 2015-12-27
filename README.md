@@ -17,7 +17,8 @@ Takes input **.xlsx** documents with mustache sippets in it and renders new docu
     import "github.com/ivahaev/go-xlsx-templater"
 ```
 
-### Prepare **template.xlsx** template. Filename may be any of course. For slices use dot notation `{{items.name}}`. When parser meets dot notation it will repeats contains row.
+### Prepare **template.xlsx** template.
+Filename may be any of course. For slices use dot notation `{{items.name}}`. When parser meets dot notation it will repeats contains row.
 
 ![Sample document image](./template.png)
 
