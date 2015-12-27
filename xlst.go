@@ -3,6 +3,7 @@ package xlst
 import (
 	"errors"
 	"io"
+	"reflect"
 	"regexp"
 
 	"github.com/aymerick/raymond"
@@ -41,7 +42,6 @@ func (m *Xlst) Render(ctx map[string]interface{}) error {
 				}
 				continue
 			}
-
 			if !isArray(ctx, prop) {
 				newRow := report.Sheets[0].AddRow()
 				cloneRow(row, newRow)
@@ -52,12 +52,12 @@ func (m *Xlst) Render(ctx map[string]interface{}) error {
 				continue
 			}
 
-			arr := ctx[prop].([]interface{})
+			arr := reflect.ValueOf(ctx[prop])
 			arrBackup := ctx[prop]
-			for i := range arr {
+			for i := 0; i < arr.Len(); i++ {
 				newRow := report.Sheets[0].AddRow()
 				cloneRow(row, newRow)
-				ctx[prop] = arr[i]
+				ctx[prop] = arr.Index(i).Interface()
 				err := renderRow(newRow, ctx)
 				if err != nil {
 					return err
@@ -144,8 +144,11 @@ func isArray(in map[string]interface{}, prop string) bool {
 	if !ok {
 		return false
 	}
-	arr, ok := val.([]interface{})
-	return ok && arr != nil
+	switch reflect.TypeOf(val).Kind() {
+	case reflect.Array, reflect.Slice:
+		return true
+	}
+	return false
 }
 
 func getListProp(in *xlsx.Row) string {
