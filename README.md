@@ -7,6 +7,8 @@ Thanks to `github.com/tealeg/xlsx` and `github.com/aymerick/raymond` for useful 
 
 [About package in russian](http://ivahaev.ru/go-xlsx-templater/)
 
+[Godoc](https://godoc.org/github.com/ivahaev/go-xlsx-templater)
+
 ## Installation
 
 ```
