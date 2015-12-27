@@ -51,18 +51,13 @@ Filename may be any of course. For slices use dot notation `{{items.name}}`. Whe
 ```
 
 ### Read template, render with context and save to disk.
+Error processing omited in example.
 
 ```go
     doc := xlst.New()
 	doc.ReadTemplate("./template.xlsx")
-	err := doc.Render(ctx)
-	if err != nil {
-		panic(err)
-	}
-	err = doc.Save("./report.xlsx")
-	if err != nil {
-		panic(err)
-	}
+	doc.Render(ctx)
+	doc.Save("./report.xlsx")
 ```
 
 ### Enjoy created report
