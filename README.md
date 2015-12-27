@@ -5,6 +5,8 @@ Takes input **.xlsx** documents with mustache sippets in it and renders new docu
 
 Thanks to `github.com/tealeg/xlsx` and `github.com/aymerick/raymond` for useful libs.
 
+[About package in russian](http://ivahaev.ru/go-xlsx-templater/)
+
 ## Installation
 
 ```
