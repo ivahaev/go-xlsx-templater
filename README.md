@@ -1,12 +1,20 @@
 # go-xlsx-templater
-Simple xlsx template based document generator
+Simple .xlsx (Excel XML document) template based document generator
 
-# xlst
+## Installation
+
+```
+    go get -u "github.com/ivahaev/go-xlsx-templater"
+```
+
+
+## Usage
+
+### Importing to your project
+
 ```go
     import "github.com/ivahaev/go-xlsx-templater"
 ```
-
-## Usage
 
 #### type Xlst
 
