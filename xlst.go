@@ -89,7 +89,7 @@ func (m *Xlst) Save(path string) error {
 	return m.report.Save(path)
 }
 
-// Save() saves generated report to disk
+// Write() writes generated report to provided writer
 func (m *Xlst) Write(writer io.Writer) error {
 	if m.report == nil {
 		return errors.New("Report was not generated")
