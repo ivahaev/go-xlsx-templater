@@ -1,5 +1,7 @@
 # go-xlsx-templater
-Simple .xlsx (Excel XML document) template based document generator
+Simple **.xlsx** (Excel XML document) template based document generator using handlebars.
+
+Takes input **.xlsx** documents with mustache sippets in it and renders new document with snippets replaced by provided context.
 
 ## Installation
 
@@ -7,14 +9,64 @@ Simple .xlsx (Excel XML document) template based document generator
     go get -u "github.com/ivahaev/go-xlsx-templater"
 ```
 
-
 ## Usage
 
-### Importing to your project
+### Import to your project
 
 ```go
     import "github.com/ivahaev/go-xlsx-templater"
 ```
+
+### Prepare **template.xlsx** template. Filename may be any of course. For slices use dot notation `{{items.name}}`. When parser meets dot notation it will repeats contains row.
+
+![Sample document image](./template.png)
+
+### Prepare context data
+
+```go
+    ctx := map[string]interface{}{
+        "name": "Github User",
+        "nameHeader": "Item name",
+        "quantityHeader": "Quantity",
+        "items": []map[string]interface{}{
+            {
+                "name": "Pen",
+                "quantity": 2,
+            },
+            {
+                "name": "Pencil",
+                "quantity": 1,
+            },
+            {
+                "name": "Condom",
+                "quantity": 12,
+            },
+            {
+                "name": "Beer",
+                "quantity": 24,
+            },
+        },
+    }
+```
+
+### Read template, render with context and save to disk.
+
+```go
+    doc := xlst.New()
+	doc.ReadTemplate("./template.xlsx")
+	err := doc.Render(ctx)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.Save("./report.xlsx")
+	if err != nil {
+		panic(err)
+	}
+```
+
+## Enjoy created report
+
+![Report image](./report.png)
 
 #### type Xlst
 
