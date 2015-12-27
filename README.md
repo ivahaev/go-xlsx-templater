@@ -64,9 +64,11 @@ Takes input **.xlsx** documents with mustache sippets in it and renders new docu
 	}
 ```
 
-## Enjoy created report
+### Enjoy created report
 
 ![Report image](./report.png)
+
+## Documentation
 
 #### type Xlst
 
