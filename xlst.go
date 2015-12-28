@@ -103,6 +103,7 @@ func cloneCell(from, to *xlsx.Cell) {
 	to.HMerge = from.HMerge
 	to.VMerge = from.VMerge
 	to.Hidden = from.Hidden
+	to.NumFmt = from.NumFmt
 }
 
 func cloneRow(from, to *xlsx.Row) {
