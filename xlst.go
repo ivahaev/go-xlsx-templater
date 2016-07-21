@@ -5,6 +5,7 @@ import (
 	"io"
 	"reflect"
 	"regexp"
+	"strings"
 
 	"github.com/aymerick/raymond"
 	"github.com/tealeg/xlsx"
@@ -20,22 +21,36 @@ type Xlst struct {
 	report *xlsx.File
 }
 
-// New() creates new Xlst struct and returns pointer to it
+// Options for render has only one property WrapTextInAllCells for wrapping text
+type Options struct {
+	WrapTextInAllCells bool
+}
+
+// New creates new Xlst struct and returns pointer to it
 func New() *Xlst {
 	return &Xlst{}
 }
 
-// Render() renders report and stores it in a struct
-func (m *Xlst) Render(ctx map[string]interface{}) error {
+// Render renders report and stores it in a struct
+func (m *Xlst) Render(in interface{}) error {
+	return m.RenderWithOptions(in, nil)
+}
+
+// RenderWithOptions renders report with options provided and stores it in a struct
+func (m *Xlst) RenderWithOptions(in interface{}, options *Options) error {
+	if options == nil {
+		options = new(Options)
+	}
 	report := xlsx.NewFile()
-	for i, sheet := range m.file.Sheets {
+	for si, sheet := range m.file.Sheets {
+		ctx := getCtx(in, si)
 		report.AddSheet(sheet.Name)
-		cloneSheet(sheet, report.Sheets[i])
+		cloneSheet(sheet, report.Sheets[si])
 		for _, row := range sheet.Rows {
 			prop := getListProp(row)
 			if prop == "" {
-				newRow := report.Sheets[0].AddRow()
-				cloneRow(row, newRow)
+				newRow := report.Sheets[si].AddRow()
+				cloneRow(row, newRow, options)
 				err := renderRow(newRow, ctx)
 				if err != nil {
 					return err
@@ -43,8 +58,8 @@ func (m *Xlst) Render(ctx map[string]interface{}) error {
 				continue
 			}
 			if !isArray(ctx, prop) {
-				newRow := report.Sheets[0].AddRow()
-				cloneRow(row, newRow)
+				newRow := report.Sheets[si].AddRow()
+				cloneRow(row, newRow, options)
 				err := renderRow(newRow, ctx)
 				if err != nil {
 					return err
@@ -55,8 +70,8 @@ func (m *Xlst) Render(ctx map[string]interface{}) error {
 			arr := reflect.ValueOf(ctx[prop])
 			arrBackup := ctx[prop]
 			for i := 0; i < arr.Len(); i++ {
-				newRow := report.Sheets[0].AddRow()
-				cloneRow(row, newRow)
+				newRow := report.Sheets[si].AddRow()
+				cloneRow(row, newRow, options)
 				ctx[prop] = arr.Index(i).Interface()
 				err := renderRow(newRow, ctx)
 				if err != nil {
@@ -65,13 +80,16 @@ func (m *Xlst) Render(ctx map[string]interface{}) error {
 			}
 			ctx[prop] = arrBackup
 		}
+		for _, col := range sheet.Cols {
+			report.Sheets[si].Cols = append(report.Sheets[si].Cols, col)
+		}
 	}
 	m.report = report
 
 	return nil
 }
 
-// ReadTemplate() reads template from disk and stores it in a struct
+// ReadTemplate reads template from disk and stores it in a struct
 func (m *Xlst) ReadTemplate(path string) error {
 	file, err := xlsx.OpenFile(path)
 	if err != nil {
@@ -81,7 +99,7 @@ func (m *Xlst) ReadTemplate(path string) error {
 	return nil
 }
 
-// Save() saves generated report to disk
+// Save saves generated report to disk
 func (m *Xlst) Save(path string) error {
 	if m.report == nil {
 		return errors.New("Report was not generated")
@@ -89,7 +107,7 @@ func (m *Xlst) Save(path string) error {
 	return m.report.Save(path)
 }
 
-// Write() writes generated report to provided writer
+// Write writes generated report to provided writer
 func (m *Xlst) Write(writer io.Writer) error {
 	if m.report == nil {
 		return errors.New("Report was not generated")
@@ -97,25 +115,31 @@ func (m *Xlst) Write(writer io.Writer) error {
 	return m.report.Write(writer)
 }
 
-func cloneCell(from, to *xlsx.Cell) {
+func cloneCell(from, to *xlsx.Cell, options *Options) {
 	to.Value = from.Value
-	to.SetStyle(from.GetStyle())
+	style := from.GetStyle()
+	if options.WrapTextInAllCells {
+		style.Alignment.WrapText = true
+	}
+	to.SetStyle(style)
 	to.HMerge = from.HMerge
 	to.VMerge = from.VMerge
 	to.Hidden = from.Hidden
 	to.NumFmt = from.NumFmt
 }
 
-func cloneRow(from, to *xlsx.Row) {
+func cloneRow(from, to *xlsx.Row, options *Options) {
 	to.Height = from.Height
 	for _, cell := range from.Cells {
 		newCell := to.AddCell()
-		cloneCell(cell, newCell)
+		cloneCell(cell, newCell, options)
 	}
 }
 
 func renderCell(cell *xlsx.Cell, ctx interface{}) error {
-	template, err := raymond.Parse(cell.Value)
+	tpl := strings.Replace(cell.Value, "{{", "{{{", -1)
+	tpl = strings.Replace(tpl, "}}", "}}}", -1)
+	template, err := raymond.Parse(tpl)
 	if err != nil {
 		return err
 	}
@@ -130,7 +154,8 @@ func renderCell(cell *xlsx.Cell, ctx interface{}) error {
 func cloneSheet(from, to *xlsx.Sheet) {
 	for _, col := range from.Cols {
 		newCol := xlsx.Col{}
-		newCol.SetStyle(col.GetStyle())
+		style := col.GetStyle()
+		newCol.SetStyle(style)
 		newCol.Width = col.Width
 		newCol.Hidden = col.Hidden
 		newCol.Collapsed = col.Collapsed
@@ -138,6 +163,22 @@ func cloneSheet(from, to *xlsx.Sheet) {
 		newCol.Max = col.Max
 		to.Cols = append(to.Cols, &newCol)
 	}
+}
+
+func getCtx(in interface{}, i int) map[string]interface{} {
+	if ctx, ok := in.(map[string]interface{}); ok {
+		return ctx
+	}
+	if ctxSlice, ok := in.([]interface{}); ok {
+		if len(ctxSlice) > i {
+			_ctx := ctxSlice[i]
+			if ctx, ok := _ctx.(map[string]interface{}); ok {
+				return ctx
+			}
+		}
+		return nil
+	}
+	return nil
 }
 
 func isArray(in map[string]interface{}, prop string) bool {
