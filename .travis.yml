@@ -1,0 +1,8 @@
+language: go
+
+go:
+  - 1.6.3
+
+install:
+  - go get github.com/aymerick/raymond
+  - go get github.com/tealeg/xlsx
