@@ -31,6 +31,17 @@ func New() *Xlst {
 	return &Xlst{}
 }
 
+// NewFromBinary creates new Xlst struct puts binary tempate into and returns pointer to it
+func NewFromBinary(content []byte) (*Xlst, error) {
+	file, err := xlsx.OpenBinary(content)
+	if err != nil {
+		return nil, err
+	}
+	
+	res := &Xlst{file: file}
+	return res, nil
+}
+
 // Render renders report and stores it in a struct
 func (m *Xlst) Render(in interface{}) error {
 	return m.RenderWithOptions(in, nil)
