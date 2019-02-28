@@ -107,6 +107,8 @@ func renderRows(sheet *xlsx.Sheet, rows []*xlsx.Row, ctx map[string]interface{},
 
 		rangeProp := getRangeProp(row)
 		if rangeProp != "" {
+			ri++
+
 			rangeEndIndex := getRangeEndIndex(rows[ri:])
 			if rangeEndIndex == -1 {
 				return fmt.Errorf("End of range %q not found", rangeProp)
@@ -121,7 +123,7 @@ func renderRows(sheet *xlsx.Sheet, rows []*xlsx.Row, ctx map[string]interface{},
 
 			for idx := range rangeCtx {
 				localCtx := mergeCtx(rangeCtx[idx], ctx)
-				err := renderRows(sheet, rows[ri+1:rangeEndIndex], localCtx, options)
+				err := renderRows(sheet, rows[ri:rangeEndIndex], localCtx, options)
 				if err != nil {
 					return err
 				}
@@ -299,13 +301,23 @@ func getRangeProp(in *xlsx.Row) string {
 }
 
 func getRangeEndIndex(rows []*xlsx.Row) int {
-	for idx := len(rows) - 1; idx >= 0; idx-- {
+	var nesting int
+	for idx := 0; idx < len(rows); idx++ {
 		if len(rows[idx].Cells) == 0 {
 			continue
 		}
 
 		if rangeEndRgx.MatchString(rows[idx].Cells[0].Value) {
-			return idx
+			if nesting == 0 {
+				return idx
+			}
+
+			nesting--
+			continue
+		}
+
+		if rangeRgx.MatchString(rows[idx].Cells[0].Value) {
+			nesting++
 		}
 	}
 
