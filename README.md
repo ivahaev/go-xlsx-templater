@@ -24,7 +24,7 @@ Thanks to `github.com/tealeg/xlsx` and `github.com/aymerick/raymond` for useful 
 ```
 
 ### Prepare **template.xlsx** template.
-Filename may be any of course. For slices use dot notation `{{items.name}}`. When parser meets dot notation it will repeats contains row.
+Filename may be any of course. For slices use dot notation `{{items.name}}`. When parser meets dot notation it will repeats contains row. If you need repeat few rows, or have nested slices, you can use range start `{{range groups}}` and `{{end}}`.
 
 ![Sample document image](./template.png)
 
@@ -33,24 +33,37 @@ Filename may be any of course. For slices use dot notation `{{items.name}}`. Whe
 ```go
     ctx := map[string]interface{}{
         "name": "Github User",
+        "groupHeader": "Group name",
         "nameHeader": "Item name",
         "quantityHeader": "Quantity",
-        "items": []map[string]interface{}{
+        "groups": []map[string]interface{}{
             {
-                "name": "Pen",
-                "quantity": 2,
+                "name":  "Work",
+                "total": 3,
+                "items": []map[string]interface{}{
+                    {
+                        "name":     "Pen",
+                        "quantity": 2,
+                    },
+                    {
+                        "name":     "Pencil",
+                        "quantity": 1,
+                    },
+                },
             },
             {
-                "name": "Pencil",
-                "quantity": 1,
-            },
-            {
-                "name": "Condom",
-                "quantity": 12,
-            },
-            {
-                "name": "Beer",
-                "quantity": 24,
+                "name":  "Weekend",
+                "total": 36,
+                "items": []map[string]interface{}{
+                    {
+                        "name":     "Condom",
+                        "quantity": 12,
+                    },
+                    {
+                        "name":     "Beer",
+                        "quantity": 24,
+                    },
+                },
             },
         },
     }

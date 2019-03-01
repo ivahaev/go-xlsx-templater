@@ -2,6 +2,7 @@ package xlst
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"regexp"
@@ -12,7 +13,9 @@ import (
 )
 
 var (
-	rgx = regexp.MustCompile(`\{\{\s*(\w+)\.\w+\s*\}\}`)
+	rgx         = regexp.MustCompile(`\{\{\s*(\w+)\.\w+\s*\}\}`)
+	rangeRgx    = regexp.MustCompile(`\{\{\s*range\s+(\w+)\s*\}\}`)
+	rangeEndRgx = regexp.MustCompile(`\{\{\s*end\s*\}\}`)
 )
 
 // Xlst Represents template struct
@@ -37,7 +40,7 @@ func NewFromBinary(content []byte) (*Xlst, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	res := &Xlst{file: file}
 	return res, nil
 }
@@ -57,40 +60,12 @@ func (m *Xlst) RenderWithOptions(in interface{}, options *Options) error {
 		ctx := getCtx(in, si)
 		report.AddSheet(sheet.Name)
 		cloneSheet(sheet, report.Sheets[si])
-		for _, row := range sheet.Rows {
-			prop := getListProp(row)
-			if prop == "" {
-				newRow := report.Sheets[si].AddRow()
-				cloneRow(row, newRow, options)
-				err := renderRow(newRow, ctx)
-				if err != nil {
-					return err
-				}
-				continue
-			}
-			if !isArray(ctx, prop) {
-				newRow := report.Sheets[si].AddRow()
-				cloneRow(row, newRow, options)
-				err := renderRow(newRow, ctx)
-				if err != nil {
-					return err
-				}
-				continue
-			}
 
-			arr := reflect.ValueOf(ctx[prop])
-			arrBackup := ctx[prop]
-			for i := 0; i < arr.Len(); i++ {
-				newRow := report.Sheets[si].AddRow()
-				cloneRow(row, newRow, options)
-				ctx[prop] = arr.Index(i).Interface()
-				err := renderRow(newRow, ctx)
-				if err != nil {
-					return err
-				}
-			}
-			ctx[prop] = arrBackup
+		err := renderRows(report.Sheets[si], sheet.Rows, ctx, options)
+		if err != nil {
+			return err
 		}
+
 		for _, col := range sheet.Cols {
 			report.Sheets[si].Cols = append(report.Sheets[si].Cols, col)
 		}
@@ -124,6 +99,77 @@ func (m *Xlst) Write(writer io.Writer) error {
 		return errors.New("Report was not generated")
 	}
 	return m.report.Write(writer)
+}
+
+func renderRows(sheet *xlsx.Sheet, rows []*xlsx.Row, ctx map[string]interface{}, options *Options) error {
+	for ri := 0; ri < len(rows); ri++ {
+		row := rows[ri]
+
+		rangeProp := getRangeProp(row)
+		if rangeProp != "" {
+			ri++
+
+			rangeEndIndex := getRangeEndIndex(rows[ri:])
+			if rangeEndIndex == -1 {
+				return fmt.Errorf("End of range %q not found", rangeProp)
+			}
+
+			rangeEndIndex += ri
+
+			rangeCtx := getRangeCtx(ctx, rangeProp)
+			if rangeCtx == nil {
+				return fmt.Errorf("Not expected context property for range %q", rangeProp)
+			}
+
+			for idx := range rangeCtx {
+				localCtx := mergeCtx(rangeCtx[idx], ctx)
+				err := renderRows(sheet, rows[ri:rangeEndIndex], localCtx, options)
+				if err != nil {
+					return err
+				}
+			}
+
+			ri = rangeEndIndex
+
+			continue
+		}
+
+		prop := getListProp(row)
+		if prop == "" {
+			newRow := sheet.AddRow()
+			cloneRow(row, newRow, options)
+			err := renderRow(newRow, ctx)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		if !isArray(ctx, prop) {
+			newRow := sheet.AddRow()
+			cloneRow(row, newRow, options)
+			err := renderRow(newRow, ctx)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		arr := reflect.ValueOf(ctx[prop])
+		arrBackup := ctx[prop]
+		for i := 0; i < arr.Len(); i++ {
+			newRow := sheet.AddRow()
+			cloneRow(row, newRow, options)
+			ctx[prop] = arr.Index(i).Interface()
+			err := renderRow(newRow, ctx)
+			if err != nil {
+				return err
+			}
+		}
+		ctx[prop] = arrBackup
+	}
+
+	return nil
 }
 
 func cloneCell(from, to *xlsx.Cell, options *Options) {
@@ -192,6 +238,33 @@ func getCtx(in interface{}, i int) map[string]interface{} {
 	return nil
 }
 
+func getRangeCtx(ctx map[string]interface{}, prop string) []map[string]interface{} {
+	val, ok := ctx[prop]
+	if !ok {
+		return nil
+	}
+
+	if propCtx, ok := val.([]map[string]interface{}); ok {
+		return propCtx
+	}
+
+	return nil
+}
+
+func mergeCtx(local, global map[string]interface{}) map[string]interface{} {
+	ctx := make(map[string]interface{})
+
+	for k, v := range global {
+		ctx[k] = v
+	}
+
+	for k, v := range local {
+		ctx[k] = v
+	}
+
+	return ctx
+}
+
 func isArray(in map[string]interface{}, prop string) bool {
 	val, ok := in[prop]
 	if !ok {
@@ -214,6 +287,41 @@ func getListProp(in *xlsx.Row) string {
 		}
 	}
 	return ""
+}
+
+func getRangeProp(in *xlsx.Row) string {
+	if len(in.Cells) != 0 {
+		match := rangeRgx.FindAllStringSubmatch(in.Cells[0].Value, -1)
+		if match != nil {
+			return match[0][1]
+		}
+	}
+
+	return ""
+}
+
+func getRangeEndIndex(rows []*xlsx.Row) int {
+	var nesting int
+	for idx := 0; idx < len(rows); idx++ {
+		if len(rows[idx].Cells) == 0 {
+			continue
+		}
+
+		if rangeEndRgx.MatchString(rows[idx].Cells[0].Value) {
+			if nesting == 0 {
+				return idx
+			}
+
+			nesting--
+			continue
+		}
+
+		if rangeRgx.MatchString(rows[idx].Cells[0].Value) {
+			nesting++
+		}
+	}
+
+	return -1
 }
 
 func renderRow(in *xlsx.Row, ctx interface{}) error {
