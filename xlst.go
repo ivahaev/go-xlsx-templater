@@ -186,7 +186,10 @@ func cloneCell(from, to *xlsx.Cell, options *Options) {
 }
 
 func cloneRow(from, to *xlsx.Row, options *Options) {
-	to.Height = from.Height
+	if from.Height != 0 {
+		to.SetHeight(from.Height)
+	}
+
 	for _, cell := range from.Cells {
 		newCell := to.AddCell()
 		cloneCell(cell, newCell, options)
