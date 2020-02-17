@@ -1,8 +1,10 @@
 language: go
 
-go:
-  - 1.6.3
+os:
+  - linux
 
-install:
-  - go get github.com/aymerick/raymond
-  - go get github.com/tealeg/xlsx
+go:
+  - 1.13
+
+script:
+  - go test
