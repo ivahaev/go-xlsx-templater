@@ -6,6 +6,7 @@ import (
 	"io"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/aymerick/raymond"
@@ -16,6 +17,7 @@ var (
 	rgx         = regexp.MustCompile(`\{\{\s*(\w+)\.\w+\s*\}\}`)
 	rangeRgx    = regexp.MustCompile(`\{\{\s*range\s+(\w+)\s*\}\}`)
 	rangeEndRgx = regexp.MustCompile(`\{\{\s*end\s*\}\}`)
+	numRgx      = regexp.MustCompile(`^#[0-9]+(\.[0-9]+)?`)
 )
 
 // Xlst Represents template struct
@@ -207,7 +209,15 @@ func renderCell(cell *xlsx.Cell, ctx interface{}) error {
 	if err != nil {
 		return err
 	}
-	cell.Value = out
+	if numRgx.MatchString(out) {
+		f, err := strconv.ParseFloat(strings.TrimPrefix(out, "#"), 64)
+		if err != nil {
+			return err
+		}
+		cell.SetFloat(f)
+	} else {
+		cell.Value = out
+	}
 	return nil
 }
 
