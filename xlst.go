@@ -17,7 +17,7 @@ var (
 	rgx         = regexp.MustCompile(`\{\{\s*(\w+)\.\w+\s*\}\}`)
 	rangeRgx    = regexp.MustCompile(`\{\{\s*range\s+(\w+)\s*\}\}`)
 	rangeEndRgx = regexp.MustCompile(`\{\{\s*end\s*\}\}`)
-	numRgx      = regexp.MustCompile(`^#[0-9]+(\.[0-9]+)?`)
+	numRgx      = regexp.MustCompile(`^#-?[0-9]+(\.[0-9]+)?`)
 )
 
 // Xlst Represents template struct
