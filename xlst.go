@@ -62,17 +62,24 @@ func (m *Xlst) RenderWithOptions(in interface{}, options *Options) error {
 	report := xlsx.NewFile()
 	for si, sheet := range m.file.Sheets {
 		ctx := getCtx(in, si)
-		report.AddSheet(sheet.Name)
-		cloneSheet(sheet, report.Sheets[si])
 
-		err := renderRows(report.Sheets[si], sheet.Rows, ctx, options)
+		newSheet, err := report.AddSheet(sheet.Name)
 		if err != nil {
+			return fmt.Errorf("Cannot add sheet: %v", err)
+		}
+
+		cloneSheet(sheet, newSheet)
+
+		sr := sheetRenderer{
+			sheet:   newSheet,
+			options: options,
+		}
+
+		if err := sr.render(sheet.Rows, ctx); err != nil {
 			return err
 		}
 
-		for _, col := range sheet.Cols {
-			report.Sheets[si].Cols = append(report.Sheets[si].Cols, col)
-		}
+		newSheet.Cols = append(newSheet.Cols, sheet.Cols...)
 	}
 	m.report = report
 
@@ -105,7 +112,12 @@ func (m *Xlst) Write(writer io.Writer) error {
 	return m.report.Write(writer)
 }
 
-func renderRows(sheet *xlsx.Sheet, rows []*xlsx.Row, ctx map[string]interface{}, options *Options) error {
+type sheetRenderer struct {
+	sheet   *xlsx.Sheet
+	options *Options
+}
+
+func (r *sheetRenderer) render(rows []*xlsx.Row, ctx map[string]interface{}) error {
 	for ri := 0; ri < len(rows); ri++ {
 		row := rows[ri]
 
@@ -127,7 +139,7 @@ func renderRows(sheet *xlsx.Sheet, rows []*xlsx.Row, ctx map[string]interface{},
 
 			for idx := range rangeCtx {
 				localCtx := mergeCtx(rangeCtx[idx], ctx)
-				err := renderRows(sheet, rows[ri:rangeEndIndex], localCtx, options)
+				err := r.render(rows[ri:rangeEndIndex], localCtx)
 				if err != nil {
 					return err
 				}
@@ -140,8 +152,8 @@ func renderRows(sheet *xlsx.Sheet, rows []*xlsx.Row, ctx map[string]interface{},
 
 		prop := getListProp(row)
 		if prop == "" || !isArray(ctx, prop) {
-			newRow := sheet.AddRow()
-			cloneRow(row, newRow, options)
+			newRow := r.sheet.AddRow()
+			cloneRow(row, newRow, r.options)
 			err := renderRow(newRow, ctx)
 			if err != nil {
 				return err
@@ -152,8 +164,8 @@ func renderRows(sheet *xlsx.Sheet, rows []*xlsx.Row, ctx map[string]interface{},
 		arr := reflect.ValueOf(ctx[prop])
 		arrBackup := ctx[prop]
 		for i := 0; i < arr.Len(); i++ {
-			newRow := sheet.AddRow()
-			cloneRow(row, newRow, options)
+			newRow := r.sheet.AddRow()
+			cloneRow(row, newRow, r.options)
 			ctx[prop] = arr.Index(i).Interface()
 			err := renderRow(newRow, ctx)
 			if err != nil {
