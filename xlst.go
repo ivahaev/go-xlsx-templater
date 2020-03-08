@@ -135,17 +135,7 @@ func renderRows(sheet *xlsx.Sheet, rows []*xlsx.Row, ctx map[string]interface{},
 		}
 
 		prop := getListProp(row)
-		if prop == "" {
-			newRow := sheet.AddRow()
-			cloneRow(row, newRow, options)
-			err := renderRow(newRow, ctx)
-			if err != nil {
-				return err
-			}
-			continue
-		}
-
-		if !isArray(ctx, prop) {
+		if prop == "" || !isArray(ctx, prop) {
 			newRow := sheet.AddRow()
 			cloneRow(row, newRow, options)
 			err := renderRow(newRow, ctx)
@@ -285,18 +275,19 @@ func getListProp(in *xlsx.Row) string {
 		if cell.Value == "" {
 			continue
 		}
-		if match := rgx.FindAllStringSubmatch(cell.Value, -1); match != nil {
-			return match[0][1]
+
+		if match := rgx.FindStringSubmatch(cell.Value); match != nil {
+			return match[1]
 		}
 	}
 	return ""
 }
 
 func getRangeProp(in *xlsx.Row) string {
-	if len(in.Cells) != 0 {
-		match := rangeRgx.FindAllStringSubmatch(in.Cells[0].Value, -1)
+	if len(in.Cells) != 0 && in.Cells[0].Value != "" {
+		match := rangeRgx.FindStringSubmatch(in.Cells[0].Value)
 		if match != nil {
-			return match[0][1]
+			return match[1]
 		}
 	}
 
