@@ -118,62 +118,77 @@ type sheetRenderer struct {
 }
 
 func (r *sheetRenderer) render(rows []*xlsx.Row, ctx map[string]interface{}) error {
-	for ri := 0; ri < len(rows); ri++ {
-		row := rows[ri]
+	var idx int
 
-		b := getBlock(row)
-		if b != nil {
-			ri++
+	for idx < len(rows) {
+		b := getBlock(rows[idx])
 
-			rangeEndIndex := getBlockEndIndex(rows[ri:])
-			if rangeEndIndex == -1 {
-				return fmt.Errorf("End of range %q not found", b.Prop)
-			}
+		switch {
 
-			rangeEndIndex += ri
-
-			rangeCtx := getRangeCtx(ctx, b.Prop)
-			if rangeCtx == nil {
-				return fmt.Errorf("Not expected context property for range %q", b.Prop)
-			}
-
-			for idx := range rangeCtx {
-				localCtx := mergeCtx(rangeCtx[idx], ctx)
-				err := r.render(rows[ri:rangeEndIndex], localCtx)
-				if err != nil {
-					return err
-				}
-			}
-
-			ri = rangeEndIndex
-
-			continue
-		}
-
-		prop := getListProp(row)
-		if prop == "" || !isArray(ctx, prop) {
-			newRow := r.sheet.AddRow()
-			cloneRow(row, newRow, r.options)
-			err := renderRow(newRow, ctx)
+		case b != nil:
+			blockLen, err := r.renderBlock(b, rows[idx:], ctx)
 			if err != nil {
 				return err
 			}
-			continue
-		}
 
-		arr := reflect.ValueOf(ctx[prop])
-		arrBackup := ctx[prop]
-		for i := 0; i < arr.Len(); i++ {
-			newRow := r.sheet.AddRow()
-			cloneRow(row, newRow, r.options)
-			ctx[prop] = arr.Index(i).Interface()
-			err := renderRow(newRow, ctx)
+			idx += blockLen
+
+		default:
+			err := r.renderRow(rows[idx], ctx)
 			if err != nil {
 				return err
 			}
+
+			idx++
+
 		}
-		ctx[prop] = arrBackup
 	}
+
+	return nil
+}
+
+func (r *sheetRenderer) renderBlock(b *block, rows []*xlsx.Row, ctx map[string]interface{}) (int, error) {
+	blockLen := getBlockLen(rows)
+	if blockLen == -1 {
+		return 0, fmt.Errorf("End of block {{%s %s}} not found", b.Name, b.Prop)
+	}
+
+	rangeCtx := getRangeCtx(ctx, b.Prop)
+	if rangeCtx == nil {
+		return 0, fmt.Errorf("Not expected context property for range %q", b.Prop)
+	}
+
+	for idx := range rangeCtx {
+		localCtx := mergeCtx(rangeCtx[idx], ctx)
+		err := r.render(rows[1:blockLen-1], localCtx)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return blockLen, nil
+}
+
+func (r *sheetRenderer) renderRow(row *xlsx.Row, ctx map[string]interface{}) error {
+	prop := getListProp(row)
+	if prop == "" || !isArray(ctx, prop) {
+		newRow := r.sheet.AddRow()
+		cloneRow(row, newRow, r.options)
+		return renderRow(newRow, ctx)
+	}
+
+	arr := reflect.ValueOf(ctx[prop])
+	arrBackup := ctx[prop]
+	for i := 0; i < arr.Len(); i++ {
+		newRow := r.sheet.AddRow()
+		cloneRow(row, newRow, r.options)
+		ctx[prop] = arr.Index(i).Interface()
+		err := renderRow(newRow, ctx)
+		if err != nil {
+			return err
+		}
+	}
+	ctx[prop] = arrBackup
 
 	return nil
 }
@@ -299,16 +314,16 @@ func getListProp(in *xlsx.Row) string {
 	return ""
 }
 
-func getBlockEndIndex(rows []*xlsx.Row) int {
+func getBlockLen(rows []*xlsx.Row) int {
 	var nesting int
-	for idx := 0; idx < len(rows); idx++ {
+	for idx := 1; idx < len(rows); idx++ {
 		if len(rows[idx].Cells) == 0 {
 			continue
 		}
 
 		if blockEndRgx.MatchString(rows[idx].Cells[0].Value) {
 			if nesting == 0 {
-				return idx
+				return idx + 1
 			}
 
 			nesting--
