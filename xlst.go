@@ -14,8 +14,15 @@ import (
 
 var (
 	rgx         = regexp.MustCompile(`\{\{\s*(\w+)\.\w+\s*\}\}`)
-	rangeRgx    = regexp.MustCompile(`\{\{\s*range\s+(\w+)\s*\}\}`)
-	rangeEndRgx = regexp.MustCompile(`\{\{\s*end\s*\}\}`)
+	blockRgx    = regexp.MustCompile(`\{\{\s*(\w+)\s+(\w+)\s*\}\}`)
+	blockEndRgx = regexp.MustCompile(`\{\{\s*end\s*\}\}`)
+	elseRgx     = regexp.MustCompile(`\{\{\s*else\s*\}\}`)
+)
+
+// Supported block types
+const (
+	rangeBlock = "range"
+	ifBlock    = "if"
 )
 
 // Xlst Represents template struct
@@ -58,17 +65,24 @@ func (m *Xlst) RenderWithOptions(in interface{}, options *Options) error {
 	report := xlsx.NewFile()
 	for si, sheet := range m.file.Sheets {
 		ctx := getCtx(in, si)
-		report.AddSheet(sheet.Name)
-		cloneSheet(sheet, report.Sheets[si])
 
-		err := renderRows(report.Sheets[si], sheet.Rows, ctx, options)
+		newSheet, err := report.AddSheet(sheet.Name)
 		if err != nil {
+			return fmt.Errorf("Cannot add sheet: %v", err)
+		}
+
+		cloneSheet(sheet, newSheet)
+
+		sr := sheetRenderer{
+			sheet:   newSheet,
+			options: options,
+		}
+
+		if err := sr.render(sheet.Rows, ctx); err != nil {
 			return err
 		}
 
-		for _, col := range sheet.Cols {
-			report.Sheets[si].Cols = append(report.Sheets[si].Cols, col)
-		}
+		newSheet.Cols = append(newSheet.Cols, sheet.Cols...)
 	}
 	m.report = report
 
@@ -101,73 +115,99 @@ func (m *Xlst) Write(writer io.Writer) error {
 	return m.report.Write(writer)
 }
 
-func renderRows(sheet *xlsx.Sheet, rows []*xlsx.Row, ctx map[string]interface{}, options *Options) error {
-	for ri := 0; ri < len(rows); ri++ {
-		row := rows[ri]
+type sheetRenderer struct {
+	sheet   *xlsx.Sheet
+	options *Options
+}
 
-		rangeProp := getRangeProp(row)
-		if rangeProp != "" {
-			ri++
+func (r *sheetRenderer) render(rows []*xlsx.Row, ctx map[string]interface{}) error {
+	var idx int
 
-			rangeEndIndex := getRangeEndIndex(rows[ri:])
-			if rangeEndIndex == -1 {
-				return fmt.Errorf("End of range %q not found", rangeProp)
-			}
+	for idx < len(rows) {
+		b := getBlock(rows[idx])
 
-			rangeEndIndex += ri
+		switch {
 
-			rangeCtx := getRangeCtx(ctx, rangeProp)
-			if rangeCtx == nil {
-				return fmt.Errorf("Not expected context property for range %q", rangeProp)
-			}
-
-			for idx := range rangeCtx {
-				localCtx := mergeCtx(rangeCtx[idx], ctx)
-				err := renderRows(sheet, rows[ri:rangeEndIndex], localCtx, options)
-				if err != nil {
-					return err
-				}
-			}
-
-			ri = rangeEndIndex
-
-			continue
-		}
-
-		prop := getListProp(row)
-		if prop == "" {
-			newRow := sheet.AddRow()
-			cloneRow(row, newRow, options)
-			err := renderRow(newRow, ctx)
+		case b != nil:
+			blockLen, err := r.renderBlock(b, rows[idx:], ctx)
 			if err != nil {
 				return err
 			}
-			continue
-		}
 
-		if !isArray(ctx, prop) {
-			newRow := sheet.AddRow()
-			cloneRow(row, newRow, options)
-			err := renderRow(newRow, ctx)
+			idx += blockLen
+
+		default:
+			err := r.renderRow(rows[idx], ctx)
 			if err != nil {
 				return err
 			}
-			continue
-		}
 
-		arr := reflect.ValueOf(ctx[prop])
-		arrBackup := ctx[prop]
-		for i := 0; i < arr.Len(); i++ {
-			newRow := sheet.AddRow()
-			cloneRow(row, newRow, options)
-			ctx[prop] = arr.Index(i).Interface()
-			err := renderRow(newRow, ctx)
-			if err != nil {
-				return err
-			}
+			idx++
+
 		}
-		ctx[prop] = arrBackup
 	}
+
+	return nil
+}
+
+func (r *sheetRenderer) renderBlock(b *block, rows []*xlsx.Row, ctx map[string]interface{}) (int, error) {
+	blockLen := getBlockLen(rows)
+	if blockLen == -1 {
+		return 0, fmt.Errorf("End of block {{%s %s}} not found", b.Name, b.Prop)
+	}
+
+	switch b.Name {
+
+	case rangeBlock:
+		rangeCtx := getRangeCtx(ctx, b.Prop)
+		if rangeCtx == nil {
+			return 0, fmt.Errorf("Not expected context property for range %q", b.Prop)
+		}
+
+		for idx := range rangeCtx {
+			localCtx := mergeCtx(rangeCtx[idx], ctx)
+			if err := r.render(rows[1:blockLen-1], localCtx); err != nil {
+				return 0, err
+			}
+		}
+
+	case ifBlock:
+		var cond bool
+
+		if prop := ctx[b.Prop]; prop != nil {
+			cond = !reflect.DeepEqual(prop, reflect.Zero(reflect.TypeOf(prop)).Interface())
+		}
+
+		ifRows := getIfRows(rows[1:blockLen-1], cond)
+		if err := r.render(ifRows, ctx); err != nil {
+			return 0, err
+		}
+
+	}
+
+	return blockLen, nil
+}
+
+func (r *sheetRenderer) renderRow(row *xlsx.Row, ctx map[string]interface{}) error {
+	prop := getListProp(row)
+	if prop == "" || !isArray(ctx, prop) {
+		newRow := r.sheet.AddRow()
+		cloneRow(row, newRow, r.options)
+		return renderRow(newRow, ctx)
+	}
+
+	arr := reflect.ValueOf(ctx[prop])
+	arrBackup := ctx[prop]
+	for i := 0; i < arr.Len(); i++ {
+		newRow := r.sheet.AddRow()
+		cloneRow(row, newRow, r.options)
+		ctx[prop] = arr.Index(i).Interface()
+		err := renderRow(newRow, ctx)
+		if err != nil {
+			return err
+		}
+	}
+	ctx[prop] = arrBackup
 
 	return nil
 }
@@ -285,46 +325,71 @@ func getListProp(in *xlsx.Row) string {
 		if cell.Value == "" {
 			continue
 		}
-		if match := rgx.FindAllStringSubmatch(cell.Value, -1); match != nil {
-			return match[0][1]
+
+		if match := rgx.FindStringSubmatch(cell.Value); match != nil {
+			return match[1]
 		}
 	}
 	return ""
 }
 
-func getRangeProp(in *xlsx.Row) string {
-	if len(in.Cells) != 0 {
-		match := rangeRgx.FindAllStringSubmatch(in.Cells[0].Value, -1)
-		if match != nil {
-			return match[0][1]
-		}
-	}
-
-	return ""
-}
-
-func getRangeEndIndex(rows []*xlsx.Row) int {
+func getBlockLen(rows []*xlsx.Row) int {
 	var nesting int
+	for idx := 1; idx < len(rows); idx++ {
+		if len(rows[idx].Cells) == 0 {
+			continue
+		}
+
+		switch {
+
+		case blockEndRgx.MatchString(rows[idx].Cells[0].Value):
+			if nesting == 0 {
+				return idx + 1
+			}
+
+			nesting--
+
+		case blockRgx.MatchString(rows[idx].Cells[0].Value):
+			nesting++
+
+		}
+	}
+
+	return -1
+}
+
+func getIfRows(rows []*xlsx.Row, cond bool) []*xlsx.Row {
+	var nesting int
+
 	for idx := 0; idx < len(rows); idx++ {
 		if len(rows[idx].Cells) == 0 {
 			continue
 		}
 
-		if rangeEndRgx.MatchString(rows[idx].Cells[0].Value) {
-			if nesting == 0 {
-				return idx
+		switch {
+
+		case nesting == 0 && elseRgx.MatchString(rows[idx].Cells[0].Value):
+			if cond {
+				return rows[0:idx]
 			}
 
+			return rows[idx+1:]
+
+		case blockRgx.MatchString(rows[idx].Cells[0].Value):
+			nesting++
+
+		case blockEndRgx.MatchString(rows[idx].Cells[0].Value):
 			nesting--
-			continue
+
 		}
 
-		if rangeRgx.MatchString(rows[idx].Cells[0].Value) {
-			nesting++
-		}
 	}
 
-	return -1
+	if cond {
+		return rows
+	}
+
+	return nil
 }
 
 func renderRow(in *xlsx.Row, ctx interface{}) error {
@@ -335,4 +400,25 @@ func renderRow(in *xlsx.Row, ctx interface{}) error {
 		}
 	}
 	return nil
+}
+
+type block struct {
+	Name string
+	Prop string
+}
+
+func getBlock(row *xlsx.Row) *block {
+	if len(row.Cells) == 0 || row.Cells[0].Value == "" {
+		return nil
+	}
+
+	match := blockRgx.FindStringSubmatch(row.Cells[0].Value)
+	if match == nil || (match[1] != rangeBlock && match[1] != ifBlock) {
+		return nil
+	}
+
+	return &block{
+		Name: match[1],
+		Prop: match[2],
+	}
 }
