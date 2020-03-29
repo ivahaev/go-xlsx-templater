@@ -1,4 +1,5 @@
 # go-xlsx-templater
+
 Simple **.xlsx** (Excel XML document) template based document generator using handlebars.
 
 Takes input **.xlsx** documents with mustache sippets in it and renders new document with snippets replaced by provided context.
@@ -11,7 +12,7 @@ Thanks to `github.com/tealeg/xlsx` and `github.com/aymerick/raymond` for useful 
 
 ## Installation
 
-```
+```console
     go get -u "github.com/ivahaev/go-xlsx-templater"
 ```
 
@@ -23,8 +24,16 @@ Thanks to `github.com/tealeg/xlsx` and `github.com/aymerick/raymond` for useful 
     import "github.com/ivahaev/go-xlsx-templater"
 ```
 
-### Prepare **template.xlsx** template.
-Filename may be any of course. For slices use dot notation `{{items.name}}`. When parser meets dot notation it will repeats contains row. If you need repeat few rows, or have nested slices, you can use range start `{{range groups}}` and `{{end}}`.
+### Prepare **template.xlsx** template
+
+Filename may be any of course. For slices use dot notation `{{items.name}}`. When parser meets dot notation it will repeats contains row.
+
+#### Blocks
+
+For complex manipulations with rows you can use block notaion. Each block begins with `{{blockName fieldName}}` and ends with `{{end}}`. They must be defined in the first cell of the row. All other content of the row will be ignored. Currently supported block types:
+
+- **range** - allows you to repeat several rows for each element in the `fieldName`. Of course, `fieldName` must contain a slice or an array.
+- **if** - allows you to display rows conditionally. `fieldName` will be considered as a *true* condition, if it exists in the context and doesn't contain default value of its type. You also can use `{{else}}` for displaying rows when condition is *false*.
 
 ![Sample document image](./template.png)
 
@@ -54,6 +63,7 @@ Filename may be any of course. For slices use dot notation `{{items.name}}`. Whe
             {
                 "name":  "Weekend",
                 "total": 36,
+                "important": true,
                 "items": []map[string]interface{}{
                     {
                         "name":     "Condom",
@@ -69,14 +79,15 @@ Filename may be any of course. For slices use dot notation `{{items.name}}`. Whe
     }
 ```
 
-### Read template, render with context and save to disk.
+### Read template, render with context and save to disk
+
 Error processing omited in example.
 
 ```go
     doc := xlst.New()
-	doc.ReadTemplate("./template.xlsx")
-	doc.Render(ctx)
-	doc.Save("./report.xlsx")
+    doc.ReadTemplate("./template.xlsx")
+    doc.Render(ctx)
+    doc.Save("./report.xlsx")
 ```
 
 ### Enjoy created report
@@ -85,7 +96,7 @@ Error processing omited in example.
 
 ## Documentation
 
-#### type Xlst
+### type Xlst
 
 ```go
 type Xlst struct {
@@ -95,37 +106,42 @@ type Xlst struct {
 
 Xlst Represents template struct
 
-#### func  New
+### func  New
 
 ```go
 func New() *Xlst
 ```
+
 New() creates new Xlst struct and returns pointer to it
 
-#### func (*Xlst) ReadTemplate
+### func (*Xlst) ReadTemplate
 
 ```go
 func (m *Xlst) ReadTemplate(path string) error
 ```
+
 ReadTemplate() reads template from disk and stores it in a struct
 
-#### func (*Xlst) Render
+### func (*Xlst) Render
 
 ```go
 func (m *Xlst) Render(ctx map[string]interface{}) error
 ```
+
 Render() renders report and stores it in a struct
 
-#### func (*Xlst) Save
+### func (*Xlst) Save
 
 ```go
 func (m *Xlst) Save(path string) error
 ```
+
 Save() saves generated report to disk
 
-#### func (*Xlst) Write
+### func (*Xlst) Write
 
 ```go
 func (m *Xlst) Write(writer io.Writer) error
 ```
+
 Write() writes generated report to provided writer
