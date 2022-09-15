@@ -247,6 +247,16 @@ func getRangeCtx(ctx map[string]interface{}, prop string) []map[string]interface
 		return nil
 	}
 
+	if in, ok := val.([]interface{}); ok {
+		var propCtx = make([]map[string]interface{}, 0, len(in))
+		for _, prop := range in {
+			if ctx, ok := prop.(map[string]interface{}); ok {
+				propCtx = append(propCtx, ctx)
+			}
+		}
+		return propCtx
+	}
+
 	if propCtx, ok := val.([]map[string]interface{}); ok {
 		return propCtx
 	}
